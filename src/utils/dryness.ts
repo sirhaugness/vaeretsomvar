@@ -114,8 +114,20 @@ export function calculateWateringStatus(
   category: PlantCategory,
   wateringLog: WateringLog,
 ): WateringStatus {
-  const baseScore = calculateBaseDrynessScore(days);
   const lastWateredDate = wateringLog[category];
+
+  if (lastWateredDate && wasWateredToday(lastWateredDate)) {
+    return {
+      category,
+      label: CATEGORY_LABELS[category],
+      score: 10,
+      level: 'good',
+      levelLabel: LEVEL_LABELS.good,
+      lastWateredDate,
+    };
+  }
+
+  const baseScore = calculateBaseDrynessScore(days);
   const wateringReduction = getWateringReduction(category, lastWateredDate);
   const score = clamp(
     baseScore * SENSITIVITY[category] - wateringReduction,
