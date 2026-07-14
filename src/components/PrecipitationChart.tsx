@@ -9,6 +9,7 @@ import {
 } from 'recharts';
 import type { DailyPrecipitation } from '../types';
 import { formatShortDate } from '../utils/dates';
+import { GlassPanel } from './GlassPanel';
 
 type PrecipitationChartProps = {
   days: DailyPrecipitation[];
@@ -41,9 +42,9 @@ function ChartTooltip({
 export function PrecipitationChart({ days }: PrecipitationChartProps) {
   if (days.length === 0) {
     return (
-      <section className="precipitation-chart empty">
+      <GlassPanel as="section" className="precipitation-chart empty">
         <p>Ingen data å vise for valgt periode.</p>
-      </section>
+      </GlassPanel>
     );
   }
 
@@ -54,8 +55,8 @@ export function PrecipitationChart({ days }: PrecipitationChartProps) {
   }));
 
   return (
-    <section className="precipitation-chart" aria-label="Nedbør per dag">
-      <h2 className="section-title">Nedbør per dag</h2>
+    <GlassPanel as="section" className="precipitation-chart" aria-label="Nedbør per dag">
+      <h2 className="section-heading">Nedbør per dag</h2>
       <div className="chart-container">
         <ResponsiveContainer width="100%" height={320}>
           <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
@@ -87,6 +88,6 @@ export function PrecipitationChart({ days }: PrecipitationChartProps) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-    </section>
+    </GlassPanel>
   );
 }

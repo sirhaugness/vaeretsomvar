@@ -1,4 +1,5 @@
 export const RECENT_LOCATIONS_KEY = 'weather-history-recent-locations-v1';
+export const WATERING_LOG_KEY = 'weather-history-watering-log-v1';
 export const MAX_RECENT_LOCATIONS = 3;
 export const FORECAST_HISTORY_DAYS = 92;
 export const MAX_PERIOD_YEARS = 5;

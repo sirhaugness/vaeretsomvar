@@ -11,6 +11,13 @@ export type DailyPrecipitation = {
   precipitation: number;
 };
 
+export type DailyWeather = {
+  date: string;
+  precipitation: number;
+  temperatureMax: number | null;
+  windSpeedMax: number | null;
+};
+
 export type PeriodPreset = 7 | 14 | 30 | 90 | 'custom';
 
 export type PeriodSelection = {
@@ -33,4 +40,19 @@ export type GeocodingResult = {
   longitude: number;
   country: string;
   admin1?: string;
+};
+
+export type WateringLevel = 'good' | 'watch' | 'soon' | 'critical';
+
+export type PlantCategory = 'largePots' | 'groundPlants' | 'grass';
+
+export type WateringLog = Record<PlantCategory, string | null>;
+
+export type WateringStatus = {
+  category: PlantCategory;
+  label: string;
+  score: number;
+  level: WateringLevel;
+  levelLabel: string;
+  lastWateredDate: string | null;
 };
