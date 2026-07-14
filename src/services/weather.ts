@@ -1,5 +1,11 @@
-import type { DailyPrecipitation } from '../types';
-import { addDays, formatDateISO, parseDateISO } from '../utils/dates';
+import type { DailyPrecipitation, DailyWeather } from '../types';
+import {
+  addDays,
+  formatDateISO,
+  getYesterday,
+  parseDateISO,
+  subtractDays,
+} from '../utils/dates';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const ARCHIVE_URL = 'https://archive-api.open-meteo.com/v1/archive';
@@ -15,8 +21,13 @@ type WeatherApiResponse = {
   daily?: {
     time?: string[];
     precipitation_sum?: number[];
+    temperature_2m_max?: number[];
+    wind_speed_10m_max?: number[];
   };
 };
+
+const DAILY_WEATHER_FIELDS =
+  'precipitation_sum,temperature_2m_max,wind_speed_10m_max';
 
 type FetchParams = {
   latitude: number;
@@ -157,4 +168,120 @@ export function summarizePrecipitation(
   }
 
   return { total, wetDays, maxDay };
+}
+
+function validateFullWeatherResponse(data: WeatherApiResponse): DailyWeather[] {
+  const times = data.daily?.time;
+  const precipitation = data.daily?.precipitation_sum;
+  const temperatureMax = data.daily?.temperature_2m_max;
+  const windSpeedMax = data.daily?.wind_speed_10m_max;
+
+  if (!times || !precipitation) {
+    throw new WeatherError('Værdata mangler i svaret fra API-et.');
+  }
+
+  if (times.length !== precipitation.length) {
+    throw new WeatherError('Ugyldig værdata: antall datoer og verdier stemmer ikke.');
+  }
+
+  return times.map((date, index) => ({
+    date,
+    precipitation: precipitation[index] ?? 0,
+    temperatureMax: temperatureMax?.[index] ?? null,
+    windSpeedMax: windSpeedMax?.[index] ?? null,
+  }));
+}
+
+async function fetchFullWeatherFromApi(
+  baseUrl: string,
+  params: FetchParams,
+): Promise<DailyWeather[]> {
+  const searchParams = new URLSearchParams({
+    latitude: String(params.latitude),
+    longitude: String(params.longitude),
+    daily: DAILY_WEATHER_FIELDS,
+    timezone: 'auto',
+    start_date: params.startDate,
+    end_date: params.endDate,
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}?${searchParams}`);
+  } catch {
+    throw new WeatherError('Kunne ikke hente værdata. Sjekk nettverket ditt.');
+  }
+
+  if (!response.ok) {
+    throw new WeatherError('Kunne ikke hente værdata for valgt periode.');
+  }
+
+  const data = (await response.json()) as WeatherApiResponse;
+  return validateFullWeatherResponse(data);
+}
+
+function mergeAndSortWeatherDays(chunks: DailyWeather[][]): DailyWeather[] {
+  const byDate = new Map<string, DailyWeather>();
+
+  for (const chunk of chunks) {
+    for (const day of chunk) {
+      byDate.set(day.date, day);
+    }
+  }
+
+  return Array.from(byDate.values()).sort((a, b) =>
+    a.date.localeCompare(b.date),
+  );
+}
+
+/** Fetches the last 14 days of weather data for watering calculations. */
+export async function fetchRecentWeather(
+  latitude: number,
+  longitude: number,
+  forecastCutoffDate: string,
+): Promise<DailyWeather[]> {
+  const endDate = formatDateISO(getYesterday());
+  const startDate = formatDateISO(subtractDays(getYesterday(), 13));
+
+  const start = parseDateISO(startDate);
+  const end = parseDateISO(endDate);
+  const cutoff = parseDateISO(forecastCutoffDate);
+
+  if (end < cutoff) {
+    return fetchFullWeatherFromApi(ARCHIVE_URL, {
+      latitude,
+      longitude,
+      startDate,
+      endDate,
+    });
+  }
+
+  if (start >= cutoff) {
+    return fetchFullWeatherFromApi(FORECAST_URL, {
+      latitude,
+      longitude,
+      startDate,
+      endDate,
+    });
+  }
+
+  const archiveEndDate = formatDateISO(addDays(cutoff, -1));
+  const forecastStartDate = formatDateISO(cutoff);
+
+  const [archiveData, forecastData] = await Promise.all([
+    fetchFullWeatherFromApi(ARCHIVE_URL, {
+      latitude,
+      longitude,
+      startDate,
+      endDate: archiveEndDate,
+    }),
+    fetchFullWeatherFromApi(FORECAST_URL, {
+      latitude,
+      longitude,
+      startDate: forecastStartDate,
+      endDate,
+    }),
+  ]);
+
+  return mergeAndSortWeatherDays([archiveData, forecastData]);
 }

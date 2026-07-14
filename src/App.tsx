@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LocationSearch } from './components/LocationSearch';
 import { PeriodSelector } from './components/PeriodSelector';
 import { PrecipitationChart } from './components/PrecipitationChart';
 import { PrecipitationStats } from './components/PrecipitationStats';
 import { RecentLocations } from './components/RecentLocations';
+import { WateringSection } from './components/WateringSection';
+import { GlassPanel } from './components/GlassPanel';
 import { OSLO_LOCATION } from './constants';
 import { useRecentLocations } from './hooks/useRecentLocations';
 import {
   fetchPrecipitation,
+  fetchRecentWeather,
   summarizePrecipitation,
   WeatherError,
 } from './services/weather';
-import type { DailyPrecipitation, Location, PeriodSelection } from './types';
+import type { DailyPrecipitation, DailyWeather, Location, PeriodSelection } from './types';
+import { calculateAllWateringStatuses } from './utils/dryness';
 import {
   getDefaultPeriod,
   getForecastCutoffDate,
@@ -31,6 +35,7 @@ export default function App() {
   const [selectedLocation, setSelectedLocation] = useState<Location>(getInitialLocation);
   const [period, setPeriod] = useState<PeriodSelection>(getDefaultPeriod);
   const [days, setDays] = useState<DailyPrecipitation[]>([]);
+  const [recentWeather, setRecentWeather] = useState<DailyWeather[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,20 +62,31 @@ export default function App() {
     setIsLoading(true);
     setError(null);
 
-    fetchPrecipitation(
-      selectedLocation.latitude,
-      selectedLocation.longitude,
-      period.startDate,
-      period.endDate,
-      getForecastCutoffDate(),
-    )
-      .then((result) => {
+    const cutoff = getForecastCutoffDate();
+
+    Promise.all([
+      fetchPrecipitation(
+        selectedLocation.latitude,
+        selectedLocation.longitude,
+        period.startDate,
+        period.endDate,
+        cutoff,
+      ),
+      fetchRecentWeather(
+        selectedLocation.latitude,
+        selectedLocation.longitude,
+        cutoff,
+      ),
+    ])
+      .then(([precipitationDays, weatherDays]) => {
         if (cancelled) return;
-        setDays(result);
+        setDays(precipitationDays);
+        setRecentWeather(weatherDays);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setDays([]);
+        setRecentWeather([]);
         setError(
           err instanceof WeatherError
             ? err.message
@@ -87,33 +103,46 @@ export default function App() {
   }, [selectedLocation, period, periodIsValid]);
 
   const summary = summarizePrecipitation(days);
+  const wateringStatuses = useMemo(
+    () => calculateAllWateringStatuses(recentWeather),
+    [recentWeather],
+  );
 
   return (
     <div className="app">
+      <div className="sky-background" aria-hidden="true">
+        <div className="cloud cloud-1" />
+        <div className="cloud cloud-2" />
+        <div className="cloud cloud-3" />
+        <div className="cloud cloud-4" />
+      </div>
+
       <header className="app-header">
         <h1>Været som var</h1>
         <p className="app-subtitle">
-          Se hvor mye nedbør som har kommet – dag for dag.
+          Se historisk nedbør og få en pekepinn på vanningsbehovet.
         </p>
       </header>
 
       <main className="app-main">
-        <LocationSearch
-          selectedLocation={selectedLocation}
-          onSelectLocation={handleSelectLocation}
-        />
+        <GlassPanel className="controls-panel">
+          <LocationSearch
+            selectedLocation={selectedLocation}
+            onSelectLocation={handleSelectLocation}
+          />
 
-        <RecentLocations
-          locations={recentLocations}
-          selectedLocation={selectedLocation}
-          onSelectLocation={handleSelectLocation}
-        />
+          <RecentLocations
+            locations={recentLocations}
+            selectedLocation={selectedLocation}
+            onSelectLocation={handleSelectLocation}
+          />
 
-        <PeriodSelector
-          period={period}
-          validationError={null}
-          onChange={setPeriod}
-        />
+          <PeriodSelector
+            period={period}
+            validationError={null}
+            onChange={setPeriod}
+          />
+        </GlassPanel>
 
         {isLoading && (
           <p className="status-message loading" role="status">
@@ -129,14 +158,12 @@ export default function App() {
 
         {!isLoading && !error && periodIsValid && (
           <>
+            <WateringSection statuses={wateringStatuses} />
             <PrecipitationStats
               location={selectedLocation}
               startDate={period.startDate}
               endDate={period.endDate}
               total={summary.total}
-              wetDays={summary.wetDays}
-              maxDay={summary.maxDay}
-              dayCount={days.length}
             />
             <PrecipitationChart days={days} />
           </>
