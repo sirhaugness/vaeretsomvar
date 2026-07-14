@@ -8,6 +8,7 @@ import { WateringSection } from './components/WateringSection';
 import { GlassPanel } from './components/GlassPanel';
 import { OSLO_LOCATION } from './constants';
 import { useRecentLocations } from './hooks/useRecentLocations';
+import { useWateringLog } from './hooks/useWateringLog';
 import {
   fetchPrecipitation,
   fetchRecentWeather,
@@ -32,6 +33,7 @@ function getInitialLocation(): Location {
 
 export default function App() {
   const { recentLocations, addRecentLocation } = useRecentLocations();
+  const { wateringLog, registerWatering } = useWateringLog();
   const [selectedLocation, setSelectedLocation] = useState<Location>(getInitialLocation);
   const [period, setPeriod] = useState<PeriodSelection>(getDefaultPeriod);
   const [days, setDays] = useState<DailyPrecipitation[]>([]);
@@ -104,8 +106,8 @@ export default function App() {
 
   const summary = summarizePrecipitation(days);
   const wateringStatuses = useMemo(
-    () => calculateAllWateringStatuses(recentWeather),
-    [recentWeather],
+    () => calculateAllWateringStatuses(recentWeather, wateringLog),
+    [recentWeather, wateringLog],
   );
 
   return (
@@ -158,7 +160,6 @@ export default function App() {
 
         {!isLoading && !error && periodIsValid && (
           <>
-            <WateringSection statuses={wateringStatuses} />
             <PrecipitationStats
               location={selectedLocation}
               startDate={period.startDate}
@@ -166,6 +167,10 @@ export default function App() {
               total={summary.total}
             />
             <PrecipitationChart days={days} />
+            <WateringSection
+              statuses={wateringStatuses}
+              onRegisterWatering={registerWatering}
+            />
           </>
         )}
       </main>

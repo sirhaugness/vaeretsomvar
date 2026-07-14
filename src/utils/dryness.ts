@@ -2,8 +2,10 @@ import type {
   DailyWeather,
   PlantCategory,
   WateringLevel,
+  WateringLog,
   WateringStatus,
 } from '../types';
+import { formatDateISO, getToday, parseDateISO } from './dates';
 
 const SENSITIVITY: Record<PlantCategory, number> = {
   largePots: 1.25,
@@ -11,24 +13,10 @@ const SENSITIVITY: Record<PlantCategory, number> = {
   grass: 0.75,
 };
 
-const CATEGORY_META: Record<
-  PlantCategory,
-  { label: string; description: string }
-> = {
-  largePots: {
-    label: 'Store potteplanter',
-    description: 'Tåler lite uttørking. Bør sjekkes ofte.',
-  },
-  groundPlants: {
-    label: 'Planter og blomster i jord',
-    description:
-      'Jorden holder bedre på fuktighet, men det begynner å bli tørt.',
-  },
-  grass: {
-    label: 'Gress',
-    description:
-      'Gress klarer seg relativt godt, men vedvarende tørke gir stress.',
-  },
+const CATEGORY_LABELS: Record<PlantCategory, string> = {
+  largePots: 'Store potteplanter',
+  groundPlants: 'Planter og blomster i jord',
+  grass: 'Gress',
 };
 
 const LEVEL_LABELS: Record<WateringLevel, string> = {
@@ -36,6 +24,13 @@ const LEVEL_LABELS: Record<WateringLevel, string> = {
   watch: 'Følg med',
   soon: 'Bør vannes snart',
   critical: 'Kritisk tørt',
+};
+
+/** How many dryness points a good watering removes, by days since watering. */
+const WATERING_EFFECT: Record<PlantCategory, number[]> = {
+  largePots: [60, 42, 28, 16, 8, 3],
+  groundPlants: [55, 40, 28, 18, 10, 4],
+  grass: [50, 38, 28, 20, 12, 5],
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -47,6 +42,24 @@ function scoreToLevel(score: number): WateringLevel {
   if (score <= 49) return 'watch';
   if (score <= 74) return 'soon';
   return 'critical';
+}
+
+function daysSinceWatering(wateredDate: string): number {
+  const watered = parseDateISO(wateredDate);
+  const today = getToday();
+  const diffMs = today.getTime() - watered.getTime();
+  return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+}
+
+function getWateringReduction(
+  category: PlantCategory,
+  lastWateredDate: string | null,
+): number {
+  if (!lastWateredDate) return 0;
+
+  const daysSince = daysSinceWatering(lastWateredDate);
+  const effect = WATERING_EFFECT[category];
+  return effect[Math.min(daysSince, effect.length - 1)] ?? 0;
 }
 
 /**
@@ -96,60 +109,34 @@ export function calculateBaseDrynessScore(days: DailyWeather[]): number {
   return clamp(score, 0, 100);
 }
 
-function buildRecommendation(
-  category: PlantCategory,
-  level: WateringLevel,
-): string {
-  switch (level) {
-    case 'critical':
-      return category === 'largePots'
-        ? 'Kritisk tørt – bør vannes i dag.'
-        : category === 'groundPlants'
-          ? 'Kritisk tørt – vann snart, særlig om det er sol og varme.'
-          : 'Kritisk tørt – gresset trenger vann.';
-    case 'soon':
-      return category === 'largePots'
-        ? 'Bør vannes snart – pottene tørker raskt ut.'
-        : category === 'groundPlants'
-          ? 'Bør vannes snart – særlig hvis sol og varme fortsetter.'
-          : 'Bør vannes snart – følg med de neste dagene.';
-    case 'watch':
-      return category === 'largePots'
-        ? 'Følg med – sjekk jordfuktigheten daglig.'
-        : category === 'groundPlants'
-          ? 'Følg med – ingen akutt handling nødvendig ennå.'
-          : 'Følg med – gresset klarer seg, men hold øye med været.';
-    case 'good':
-      return category === 'largePots'
-        ? 'God fuktighet – ingen vanning nødvendig nå.'
-        : category === 'groundPlants'
-          ? 'God fuktighet – jorden holder på vannet.'
-          : 'God fuktighet – gresset har det bra.';
-  }
-}
-
 export function calculateWateringStatus(
   days: DailyWeather[],
   category: PlantCategory,
+  wateringLog: WateringLog,
 ): WateringStatus {
   const baseScore = calculateBaseDrynessScore(days);
-  const score = clamp(baseScore * SENSITIVITY[category], 0, 100);
+  const lastWateredDate = wateringLog[category];
+  const wateringReduction = getWateringReduction(category, lastWateredDate);
+  const score = clamp(
+    baseScore * SENSITIVITY[category] - wateringReduction,
+    0,
+    100,
+  );
   const level = scoreToLevel(score);
-  const meta = CATEGORY_META[category];
 
   return {
     category,
-    label: meta.label,
+    label: CATEGORY_LABELS[category],
     score,
     level,
     levelLabel: LEVEL_LABELS[level],
-    recommendation: buildRecommendation(category, level),
-    description: meta.description,
+    lastWateredDate,
   };
 }
 
 export function calculateAllWateringStatuses(
   days: DailyWeather[],
+  wateringLog: WateringLog,
 ): WateringStatus[] {
   const categories: PlantCategory[] = [
     'largePots',
@@ -157,8 +144,13 @@ export function calculateAllWateringStatuses(
     'grass',
   ];
   return categories.map((category) =>
-    calculateWateringStatus(days, category),
+    calculateWateringStatus(days, category, wateringLog),
   );
+}
+
+export function wasWateredToday(lastWateredDate: string | null): boolean {
+  if (!lastWateredDate) return false;
+  return lastWateredDate === formatDateISO(getToday());
 }
 
 export function getLevelColor(level: WateringLevel): string {

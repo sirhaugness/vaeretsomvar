@@ -46,12 +46,13 @@ export type WateringLevel = 'good' | 'watch' | 'soon' | 'critical';
 
 export type PlantCategory = 'largePots' | 'groundPlants' | 'grass';
 
+export type WateringLog = Record<PlantCategory, string | null>;
+
 export type WateringStatus = {
   category: PlantCategory;
   label: string;
   score: number;
   level: WateringLevel;
   levelLabel: string;
-  recommendation: string;
-  description: string;
+  lastWateredDate: string | null;
 };

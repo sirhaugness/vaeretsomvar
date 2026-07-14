@@ -1,20 +1,27 @@
-import type { WateringStatus } from '../types';
+import type { PlantCategory, WateringStatus } from '../types';
 import { GlassPanel } from './GlassPanel';
 import { WateringStatusCard } from './WateringStatusCard';
 
 type WateringSectionProps = {
   statuses: WateringStatus[];
+  onRegisterWatering: (category: PlantCategory) => void;
 };
 
-export function WateringSection({ statuses }: WateringSectionProps) {
+export function WateringSection({
+  statuses,
+  onRegisterWatering,
+}: WateringSectionProps) {
   return (
     <GlassPanel as="section" className="watering-section">
       <h2 className="section-heading">Vanningsbehov</h2>
-      <p className="section-subheading">Hvor tørt er det nå?</p>
 
       <div className="watering-cards">
         {statuses.map((status) => (
-          <WateringStatusCard key={status.category} status={status} />
+          <WateringStatusCard
+            key={status.category}
+            status={status}
+            onRegisterWatering={onRegisterWatering}
+          />
         ))}
       </div>
 
